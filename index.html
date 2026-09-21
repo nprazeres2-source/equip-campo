@@ -136,6 +136,17 @@
     margin-bottom:14px;
   }
   .seq-badge span.n{font-weight:700;font-size:1.15rem;}
+  .seq-badge input.seq-input{
+    background:transparent;
+    border:none;
+    border-bottom:1px dashed var(--sea);
+    color:var(--sea);
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:1.15rem;
+    width:90px;
+    padding:0 2px;
+  }
 
   .locale-toggle{display:flex;gap:10px;margin-bottom:16px;}
   .locale-toggle label{
@@ -349,7 +360,9 @@
   <!-- ==================== NOVO REGISTO ==================== -->
   <section id="secNovo" class="active">
 
-    <div class="seq-badge">N.º de saída <span class="n" id="seqPreview">—</span></div>
+    <div class="seq-badge">N.º de saída
+      <input type="number" id="seqInput" class="seq-input" min="1" step="1">
+    </div>
 
     <div class="field-row">
       <div class="field">
@@ -933,9 +946,11 @@ function limparFormulario(){
 }
 
 async function atualizarSeqPreview(){
-  document.getElementById("seqPreview").textContent = "…";
+  document.getElementById("seqInput").value = "";
+  document.getElementById("seqInput").placeholder = "…";
   const n = await obterProximoNumeroPreview();
-  document.getElementById("seqPreview").textContent = n;
+  document.getElementById("seqInput").value = n;
+  document.getElementById("seqInput").placeholder = "";
 }
 async function obterProximoNumeroPreview(){
   if(!firebaseAtivo) return proximoNumeroLocal();
@@ -947,6 +962,20 @@ async function obterProximoNumeroPreview(){
   }
 }
 
+async function garantirContadorFirebase(numero){
+  if(!firebaseAtivo) return;
+  try{
+    const ref = db.collection("contadores").doc(CONTADOR_DOC);
+    await db.runTransaction(async (t) => {
+      const doc = await t.get(ref);
+      const atual = doc.exists && doc.data().seguinte ? doc.data().seguinte : 1;
+      if(numero + 1 > atual){
+        t.set(ref, { seguinte: numero + 1 }, { merge: true });
+      }
+    });
+  }catch(e){ /* melhor esforço — não bloqueia o guardar */ }
+}
+
 async function guardarRegisto(){
   const dtSaida = document.getElementById("fDtSaida").value;
   const utilizador = document.getElementById("fUtilizador").value.trim();
@@ -954,20 +983,30 @@ async function guardarRegisto(){
     alert("Preenche pelo menos a data de saída e o utilizador.");
     return;
   }
+  const numero = parseInt(document.getElementById("seqInput").value, 10);
+  if(!numero || numero <= 0){
+    alert("Indica um número de saída válido.");
+    return;
+  }
+  const id = editandoId !== null ? editandoId : Date.now();
+  const duplicado = registos.find(r => r.numero === numero && r.id !== id);
+  if(duplicado){
+    const continuar = confirm(
+      `Atenção: já existe o registo n.º ${numero} (${duplicado.utilizador}, saída ${duplicado.dtSaida}).\n\n` +
+      `Guardar mesmo assim vai deixar dois registos com o mesmo número. Continuar?`
+    );
+    if(!continuar) return;
+  }
+
   const equip = recolherEquipamentoSelecionado();
   const canvasLev = document.getElementById("sigLevantamento");
   const canvasDev = document.getElementById("sigDevolucao");
 
-  let numero, id, assinaturaAnteriorLev = null, assinaturaAnteriorDev = null;
+  let assinaturaAnteriorLev = null, assinaturaAnteriorDev = null;
   if(editandoId !== null){
     const existente = registos.find(r => r.id === editandoId);
-    numero = existente.numero;
-    id = existente.id;
     assinaturaAnteriorLev = existente.assinaturaLevantamento || null;
     assinaturaAnteriorDev = existente.assinaturaDevolucao || null;
-  } else {
-    numero = await obterProximoNumero();
-    id = Date.now();
   }
 
   const registo = {
@@ -987,6 +1026,7 @@ async function guardarRegisto(){
   if(firebaseAtivo){
     try{
       await db.collection(COLECAO).doc(String(id)).set(registo);
+      await garantirContadorFirebase(numero);
     }catch(e){
       alert("Não foi possível sincronizar (sem ligação?). O registo foi guardado só neste dispositivo.");
       aplicarRegistoLocalmente(registo);
@@ -1020,7 +1060,7 @@ function editarRegisto(id){
   aplicarEquipamentoSelecionado(r.equipamento);
   carregarAssinaturaNoCanvas("sigLevantamento", r.assinaturaLevantamento);
   carregarAssinaturaNoCanvas("sigDevolucao", r.assinaturaDevolucao);
-  document.getElementById("seqPreview").textContent = r.numero;
+  document.getElementById("seqInput").value = r.numero;
   document.getElementById("editNotice").style.display = "block";
   document.getElementById("editNotice").textContent = "A editar o registo n.º " + r.numero + ".";
   switchTab("novo");
