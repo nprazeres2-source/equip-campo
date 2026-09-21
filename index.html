@@ -57,6 +57,20 @@
   .sync-banner.on{color:var(--ok);border-color:var(--ok);}
   .sync-banner.off{color:var(--land);border-color:var(--land-dim);}
   .sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;}
+  .alerta-atrasados{
+    margin-top:8px;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-size:0.8rem;
+    font-weight:600;
+    padding:7px 12px;
+    border-radius:6px;
+    background:var(--warn);
+    color:#2A1710;
+    cursor:pointer;
+    width:fit-content;
+  }
   nav.tabs{
     display:flex;
     gap:2px;
@@ -270,6 +284,7 @@
   }
   .status-pill.out{background:var(--warn);color:#2A1710;}
   .status-pill.in{background:var(--ok);color:#0F2410;}
+  .status-pill.atrasado{background:#E8503A;color:#fff;}
   .row-actions{display:flex;gap:6px;flex-wrap:wrap;}
   .row-actions button{
     font-size:0.75rem;
@@ -322,6 +337,7 @@
   <h1>Registo de Equipamento de Campo</h1>
   <div class="sub">saídas &amp; devoluções de material — mar / terra</div>
   <div id="syncBanner" class="sync-banner off"><span class="sync-dot"></span><span id="syncBannerTexto">a verificar sincronização…</span></div>
+  <div id="alertaAtrasados" class="alerta-atrasados" style="display:none;" onclick="irParaAtrasados()">⚠️ <span id="alertaTexto"></span></div>
   <nav class="tabs">
     <button id="tabNovo" class="active" onclick="switchTab('novo')">Novo registo</button>
     <button id="tabLista" onclick="switchTab('lista')">Histórico</button>
@@ -393,6 +409,7 @@
       <select id="filtroEstado" onchange="renderLista()">
         <option value="">Todos os estados</option>
         <option value="fora">Em campo (por devolver)</option>
+        <option value="atrasado">Atrasados (mais de 6 meses)</option>
         <option value="devolvido">Devolvido</option>
       </select>
       <button class="secondary" onclick="limparFiltros()">Limpar filtros</button>
@@ -471,6 +488,25 @@ const GRUPOS = [
     { id: "cartao_32", nome: "Cartão de Memória 32GB", codigos: ["M1","M2","M3","M4","M5","M6"] },
     { id: "cartao_16", nome: "Cartão de Memória 16GB", codigos: ["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11"] },
   ]},
+  { nome: "Amostragem Oceanográfica", itens: [
+    { id: "batiscopio", nome: "Batiscópio", codigos: ["1-A"] },
+    { id: "bomba_vacuo", nome: "Bomba de Vácuo", codigos: ["1-B"] },
+    { id: "coluna_filtracao", nome: "Coluna de filtração", codigos: ["1-C"] },
+    { id: "garrafa_niskin", nome: "Garrafa de Niskin", codigos: ["1-D"] },
+    { id: "rede_plancton", nome: "Rede Plancton", codigos: ["1-E"] },
+  ]},
+  { nome: "Topografia", itens: [
+    { id: "teodolito", nome: "Teodolito", codigos: ["A","B"] },
+    { id: "tripe_teodolito", nome: "Tripé Teodolito", codigos: ["1","2"] },
+    { id: "telescopio", nome: "Telescópio", codigos: ["P1","P2","P3","P4"] },
+    { id: "tripe_telescopio", nome: "Tripé Telescópio", codigos: ["TP1","TP2","TP3","TP4"] },
+  ]},
+  { nome: "Vestuário &amp; Proteção", itens: [
+    { id: "impermeavel", nome: "Impermeável", codigos: ["M","L","XL"] },
+    { id: "softgel_lixo_zero", nome: "SoftGel Lixo Zero", codigos: ["M","L","XL"] },
+    { id: "impermeavel_hh", nome: "Impermeável Helly Hansen Azul (casaco)", codigos: ["M","L","XL"] },
+    { id: "bota_mergulho", nome: "Bota Mergulho", codigos: [], multiTexto: true },
+  ]},
   { nome: "GPS &amp; Localização", itens: [
     { id: "gps", nome: "GPS", codigos: ["1","2","3","4"] },
     { id: "gps_plb", nome: "GPS Personal Locator Beacon", codigos: ["1-J"] },
@@ -481,11 +517,15 @@ const GRUPOS = [
     { id: "tablet", nome: "Tablet", codigos: ["1","2"] },
     { id: "router", nome: "Router wireless", codigos: ["1-H"] },
     { id: "usbc_dock", nome: "USB-C Dock", codigos: ["01","02","03"] },
+    { id: "portatil_mac", nome: "Portátil MAC", codigos: [] },
   ]},
   { nome: "Rádio &amp; Diversos", itens: [
     { id: "radio_vhf", nome: "Rádio VHF/Carregador/Auricular", codigos: ["1-I"] },
-    { id: "pilhas", nome: "Pilhas recarregáveis", codigos: [] },
+    { id: "pilhas", nome: "Pilhas recarregáveis", codigos: [], quantidade: true },
     { id: "carregador_pilhas", nome: "Carregador pilhas", codigos: ["1","2","3","4"] },
+    { id: "hobo_onset", nome: "HOBO ONSET - Temp/Light", codigos: ["HB01","HB02","HB03"] },
+    { id: "mochilas_campo", nome: "Mochilas de Campo (estanque)", codigos: ["M1","M2","M3","M4","M5","M6"] },
+    { id: "mala_transporte", nome: "Mala de Transporte", codigos: [] },
   ]},
 ];
 
@@ -513,6 +553,7 @@ function iniciarFirebase(){
       registos = snapshot.docs.map(d => d.data());
       renderLista();
       construirFiltroAno();
+      atualizarAlertaAtrasados();
     }, err => {
       banner.className = "sync-banner off";
       texto.textContent = "erro de sincronização — a usar cópia local";
@@ -532,6 +573,7 @@ function carregarLocal(){
   }catch(e){ registos = []; }
   renderLista();
   construirFiltroAno();
+  atualizarAlertaAtrasados();
 }
 function guardarStorageLocal(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(registos));
@@ -575,7 +617,39 @@ function construirFormulario(){
       row.appendChild(label);
       const codesDiv = document.createElement("div");
       codesDiv.className = "codes";
-      if(item.codigos.length === 0){
+      if(item.multiTexto){
+        const wrap = document.createElement("div");
+        wrap.style.display = "flex";
+        wrap.style.flexDirection = "column";
+        wrap.style.gap = "6px";
+        wrap.style.alignItems = "flex-start";
+        const container = document.createElement("div");
+        container.className = "multi-texto-container";
+        container.dataset.itemId = item.id;
+        container.style.display = "flex";
+        container.style.flexDirection = "column";
+        container.style.gap = "6px";
+        wrap.appendChild(container);
+        const addBtn = document.createElement("button");
+        addBtn.type = "button";
+        addBtn.className = "secondary";
+        addBtn.textContent = "+ Adicionar par";
+        addBtn.onclick = () => adicionarLinhaMultiTexto(item.id, gi);
+        wrap.appendChild(addBtn);
+        codesDiv.appendChild(wrap);
+        adicionarLinhaMultiTexto(item.id, gi);
+      } else if(item.quantidade){
+        const qty = document.createElement("input");
+        qty.type = "number";
+        qty.min = "0";
+        qty.step = "1";
+        qty.placeholder = "N.º pilhas";
+        qty.style.width = "110px";
+        qty.dataset.itemId = item.id;
+        qty.className = "qty-input";
+        qty.oninput = () => atualizarContagemGrupo(gi);
+        codesDiv.appendChild(qty);
+      } else if(item.codigos.length === 0){
         const chip = document.createElement("div");
         chip.className = "code-chip";
         chip.textContent = "Levado";
@@ -600,6 +674,42 @@ function construirFormulario(){
     det.appendChild(body);
     container.appendChild(det);
   });
+}
+
+function adicionarLinhaMultiTexto(itemId, gi, valor){
+  const container = document.querySelector(`.multi-texto-container[data-item-id="${itemId}"]`);
+  if(!container) return;
+  const row = document.createElement("div");
+  row.style.display = "flex";
+  row.style.gap = "6px";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Tamanho (ex: 42)";
+  input.className = "multi-texto-input";
+  input.style.width = "140px";
+  input.value = valor || "";
+  input.oninput = () => atualizarContagemGrupo(gi);
+  const rm = document.createElement("button");
+  rm.type = "button";
+  rm.className = "secondary";
+  rm.textContent = "✕";
+  rm.onclick = () => { row.remove(); atualizarContagemGrupo(gi); };
+  row.appendChild(input);
+  row.appendChild(rm);
+  container.appendChild(row);
+}
+
+function buscarItem(itemId){
+  for(const g of GRUPOS){
+    for(const it of g.itens){
+      if(it.id === itemId) return it;
+    }
+  }
+  return null;
+}
+
+function indiceGrupoDoItem(itemId){
+  return GRUPOS.findIndex(g => g.itens.some(it => it.id === itemId));
 }
 
 function verificarConflito(itemId, code){
@@ -633,7 +743,9 @@ function toggleChip(chip, groupIndex){
 
 function atualizarContagemGrupo(gi){
   const group = document.querySelectorAll("#equipGroups details")[gi];
-  const total = group.querySelectorAll(".code-chip.on").length;
+  let total = group.querySelectorAll(".code-chip.on").length;
+  group.querySelectorAll(".qty-input").forEach(inp => { if(parseInt(inp.value,10) > 0) total++; });
+  group.querySelectorAll(".multi-texto-input").forEach(inp => { if(inp.value.trim()) total++; });
   const badge = group.querySelector(".count");
   badge.textContent = total + " selecionado" + (total === 1 ? "" : "s");
   badge.classList.toggle("empty", total === 0);
@@ -647,13 +759,43 @@ function recolherEquipamentoSelecionado(){
     if(!resultado[itemId]) resultado[itemId] = [];
     resultado[itemId].push(code);
   });
+  document.querySelectorAll("#equipGroups .qty-input").forEach(inp => {
+    const n = parseInt(inp.value, 10);
+    if(n > 0) resultado[inp.dataset.itemId] = ["qtd:" + n];
+  });
+  document.querySelectorAll("#equipGroups .multi-texto-container").forEach(container => {
+    const itemId = container.dataset.itemId;
+    const valores = [...container.querySelectorAll(".multi-texto-input")].map(i => i.value.trim()).filter(Boolean);
+    if(valores.length) resultado[itemId] = valores;
+  });
   return resultado;
 }
 
 function aplicarEquipamentoSelecionado(equip){
   document.querySelectorAll("#equipGroups .code-chip").forEach(chip => chip.classList.remove("on"));
+  document.querySelectorAll("#equipGroups .qty-input").forEach(inp => inp.value = "");
+  document.querySelectorAll("#equipGroups .multi-texto-container").forEach(container => {
+    const itemId = container.dataset.itemId;
+    const gi = indiceGrupoDoItem(itemId);
+    container.innerHTML = "";
+    adicionarLinhaMultiTexto(itemId, gi, "");
+  });
   Object.keys(equip || {}).forEach(itemId => {
-    equip[itemId].forEach(code => {
+    const valores = equip[itemId];
+    const item = buscarItem(itemId);
+    if(item && item.multiTexto){
+      const gi = indiceGrupoDoItem(itemId);
+      const container = document.querySelector(`.multi-texto-container[data-item-id="${itemId}"]`);
+      container.innerHTML = "";
+      valores.forEach(v => adicionarLinhaMultiTexto(itemId, gi, v));
+      return;
+    }
+    if(valores.length === 1 && String(valores[0]).startsWith("qtd:")){
+      const inp = document.querySelector(`#equipGroups .qty-input[data-item-id="${itemId}"]`);
+      if(inp) inp.value = valores[0].slice(4);
+      return;
+    }
+    valores.forEach(code => {
       const sel = document.querySelector(`#equipGroups .code-chip[data-item-id="${itemId}"][data-code="${CSS.escape(code)}"]`);
       if(sel) sel.classList.add("on");
     });
@@ -675,7 +817,9 @@ function resumoEquipamento(equip){
   Object.keys(equip || {}).forEach(itemId => {
     const codes = equip[itemId];
     const nome = nomeItem(itemId);
-    if(codes.length === 1 && codes[0] === "sim"){
+    if(codes.length === 1 && String(codes[0]).startsWith("qtd:")){
+      partes.push(nome + ": " + codes[0].slice(4) + " un.");
+    } else if(codes.length === 1 && codes[0] === "sim"){
       partes.push(nome);
     } else {
       partes.push(nome + " (" + codes.join(", ") + ")");
@@ -775,6 +919,13 @@ function limparFormulario(){
   document.getElementById("fDtDevolucao").value = "";
   document.getElementById("fObs").value = "";
   document.querySelectorAll("#equipGroups .code-chip").forEach(chip => chip.classList.remove("on"));
+  document.querySelectorAll("#equipGroups .qty-input").forEach(inp => inp.value = "");
+  document.querySelectorAll("#equipGroups .multi-texto-container").forEach(container => {
+    const itemId = container.dataset.itemId;
+    const gi = indiceGrupoDoItem(itemId);
+    container.innerHTML = "";
+    adicionarLinhaMultiTexto(itemId, gi, "");
+  });
   document.querySelectorAll("#equipGroups details").forEach((det, gi) => atualizarContagemGrupo(gi));
   limparCanvas("sigLevantamento");
   limparCanvas("sigDevolucao");
@@ -853,6 +1004,7 @@ function aplicarRegistoLocalmente(registo){
   const idx = registos.findIndex(r => r.id === registo.id);
   if(idx >= 0) registos[idx] = registo; else registos.push(registo);
   guardarStorageLocal();
+  atualizarAlertaAtrasados();
 }
 
 function editarRegisto(id){
@@ -896,6 +1048,34 @@ async function apagarRegisto(id){
   registos = registos.filter(r => r.id !== id);
   guardarStorageLocal();
   renderLista();
+  atualizarAlertaAtrasados();
+}
+
+function estaAtrasado(dtSaida){
+  if(!dtSaida) return false;
+  const d = new Date(dtSaida + "T00:00:00");
+  if(isNaN(d)) return false;
+  const limite = new Date(d);
+  limite.setMonth(limite.getMonth() + 6);
+  return new Date() > limite;
+}
+
+function atualizarAlertaAtrasados(){
+  const atrasados = registos.filter(r => !r.dtDevolucao && estaAtrasado(r.dtSaida));
+  const banner = document.getElementById("alertaAtrasados");
+  if(atrasados.length === 0){
+    banner.style.display = "none";
+    return;
+  }
+  banner.style.display = "inline-flex";
+  document.getElementById("alertaTexto").textContent =
+    atrasados.length + " registo" + (atrasados.length === 1 ? "" : "s") + " por devolver há mais de 6 meses — toca para ver";
+}
+
+function irParaAtrasados(){
+  switchTab("lista");
+  document.getElementById("filtroEstado").value = "atrasado";
+  renderLista();
 }
 
 // ---------- Lista / Histórico / Filtros ----------
@@ -932,6 +1112,7 @@ function renderLista(){
   lista = lista.filter(r => {
     if(estado === "fora" && r.dtDevolucao) return false;
     if(estado === "devolvido" && !r.dtDevolucao) return false;
+    if(estado === "atrasado" && !(!r.dtDevolucao && estaAtrasado(r.dtSaida))) return false;
     if(ano && !(r.dtSaida || "").startsWith(ano)) return false;
     if(dataDe && r.dtSaida < dataDe) return false;
     if(dataAte && r.dtSaida > dataAte) return false;
@@ -953,7 +1134,9 @@ function renderLista(){
     const local = [r.mar ? "Mar" : null, r.terra ? "Terra" : null].filter(Boolean).join(" / ") || "—";
     const estadoTag = r.dtDevolucao
       ? `<span class="status-pill in">Devolvido ${r.dtDevolucao}</span>`
-      : `<span class="status-pill out">Em campo</span>`;
+      : (estaAtrasado(r.dtSaida)
+          ? `<span class="status-pill atrasado">⚠️ Em campo — +6 meses</span>`
+          : `<span class="status-pill out">Em campo</span>`);
     tr.innerHTML = `
       <td class="n-cell">${r.numero}</td>
       <td>${r.dtSaida}</td>
@@ -989,7 +1172,10 @@ function imprimirTalao(id){
   const linhasEquip = Object.keys(r.equipamento || {}).map(itemId => {
     const codes = r.equipamento[itemId];
     const nome = nomeItem(itemId);
-    const valor = (codes.length === 1 && codes[0] === "sim") ? "—" : codes.join(", ");
+    let valor;
+    if(codes.length === 1 && String(codes[0]).startsWith("qtd:")) valor = codes[0].slice(4) + " un.";
+    else if(codes.length === 1 && codes[0] === "sim") valor = "—";
+    else valor = codes.join(", ");
     return `<tr><td>${escapeHtml(nome)}</td><td>${escapeHtml(valor)}</td></tr>`;
   }).join("");
   const html = `
