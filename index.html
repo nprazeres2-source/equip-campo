@@ -534,7 +534,7 @@ const GRUPOS = [
   ]},
   { nome: "Rádio &amp; Diversos", itens: [
     { id: "radio_vhf", nome: "Rádio VHF/Carregador/Auricular", codigos: ["1-I"] },
-    { id: "pilhas", nome: "Pilhas recarregáveis", codigos: [], quantidade: true },
+    { id: "pilhas", nome: "Pilhas recarregáveis", codigos: [], tiposQuantidade: ["AA","AAA"] },
     { id: "carregador_pilhas", nome: "Carregador pilhas", codigos: ["1","2","3","4"] },
     { id: "hobo_onset", nome: "HOBO ONSET - Temp/Light", codigos: ["HB01","HB02","HB03"] },
     { id: "mochilas_campo", nome: "Mochilas de Campo (estanque)", codigos: ["M1","M2","M3","M4","M5","M6"] },
@@ -651,6 +651,37 @@ function construirFormulario(){
         wrap.appendChild(addBtn);
         codesDiv.appendChild(wrap);
         adicionarLinhaMultiTexto(item.id, gi);
+      } else if(item.tiposQuantidade){
+        const wrap = document.createElement("div");
+        wrap.style.display = "flex";
+        wrap.style.gap = "12px";
+        wrap.className = "tipoqty-container";
+        wrap.dataset.itemId = item.id;
+        item.tiposQuantidade.forEach(tipo => {
+          const grupoTipo = document.createElement("div");
+          grupoTipo.style.display = "flex";
+          grupoTipo.style.alignItems = "center";
+          grupoTipo.style.gap = "5px";
+          const lbl = document.createElement("span");
+          lbl.textContent = tipo;
+          lbl.style.fontFamily = "var(--mono)";
+          lbl.style.fontSize = "0.8rem";
+          lbl.style.color = "var(--text-dim)";
+          const inp = document.createElement("input");
+          inp.type = "number";
+          inp.min = "0";
+          inp.step = "1";
+          inp.placeholder = "0";
+          inp.style.width = "70px";
+          inp.className = "tipoqty-input";
+          inp.dataset.itemId = item.id;
+          inp.dataset.tipo = tipo;
+          inp.oninput = () => atualizarContagemGrupo(gi);
+          grupoTipo.appendChild(lbl);
+          grupoTipo.appendChild(inp);
+          wrap.appendChild(grupoTipo);
+        });
+        codesDiv.appendChild(wrap);
       } else if(item.quantidade){
         const qty = document.createElement("input");
         qty.type = "number";
@@ -758,6 +789,7 @@ function atualizarContagemGrupo(gi){
   const group = document.querySelectorAll("#equipGroups details")[gi];
   let total = group.querySelectorAll(".code-chip.on").length;
   group.querySelectorAll(".qty-input").forEach(inp => { if(parseInt(inp.value,10) > 0) total++; });
+  group.querySelectorAll(".tipoqty-input").forEach(inp => { if(parseInt(inp.value,10) > 0) total++; });
   group.querySelectorAll(".multi-texto-input").forEach(inp => { if(inp.value.trim()) total++; });
   const badge = group.querySelector(".count");
   badge.textContent = total + " selecionado" + (total === 1 ? "" : "s");
@@ -776,6 +808,15 @@ function recolherEquipamentoSelecionado(){
     const n = parseInt(inp.value, 10);
     if(n > 0) resultado[inp.dataset.itemId] = ["qtd:" + n];
   });
+  document.querySelectorAll("#equipGroups .tipoqty-container").forEach(container => {
+    const itemId = container.dataset.itemId;
+    const valores = [];
+    container.querySelectorAll(".tipoqty-input").forEach(inp => {
+      const n = parseInt(inp.value, 10);
+      if(n > 0) valores.push(inp.dataset.tipo + ":" + n);
+    });
+    if(valores.length) resultado[itemId] = valores;
+  });
   document.querySelectorAll("#equipGroups .multi-texto-container").forEach(container => {
     const itemId = container.dataset.itemId;
     const valores = [...container.querySelectorAll(".multi-texto-input")].map(i => i.value.trim()).filter(Boolean);
@@ -787,6 +828,7 @@ function recolherEquipamentoSelecionado(){
 function aplicarEquipamentoSelecionado(equip){
   document.querySelectorAll("#equipGroups .code-chip").forEach(chip => chip.classList.remove("on"));
   document.querySelectorAll("#equipGroups .qty-input").forEach(inp => inp.value = "");
+  document.querySelectorAll("#equipGroups .tipoqty-input").forEach(inp => inp.value = "");
   document.querySelectorAll("#equipGroups .multi-texto-container").forEach(container => {
     const itemId = container.dataset.itemId;
     const gi = indiceGrupoDoItem(itemId);
@@ -801,6 +843,14 @@ function aplicarEquipamentoSelecionado(equip){
       const container = document.querySelector(`.multi-texto-container[data-item-id="${itemId}"]`);
       container.innerHTML = "";
       valores.forEach(v => adicionarLinhaMultiTexto(itemId, gi, v));
+      return;
+    }
+    if(item && item.tiposQuantidade){
+      valores.forEach(entrada => {
+        const [tipo, n] = entrada.split(":");
+        const inp = document.querySelector(`.tipoqty-input[data-item-id="${itemId}"][data-tipo="${CSS.escape(tipo)}"]`);
+        if(inp) inp.value = n;
+      });
       return;
     }
     if(valores.length === 1 && String(valores[0]).startsWith("qtd:")){
@@ -830,7 +880,10 @@ function resumoEquipamento(equip){
   Object.keys(equip || {}).forEach(itemId => {
     const codes = equip[itemId];
     const nome = nomeItem(itemId);
-    if(codes.length === 1 && String(codes[0]).startsWith("qtd:")){
+    const item = buscarItem(itemId);
+    if(item && item.tiposQuantidade){
+      partes.push(nome + " (" + codes.map(c => c.replace(":", ": ")).join(", ") + ")");
+    } else if(codes.length === 1 && String(codes[0]).startsWith("qtd:")){
       partes.push(nome + ": " + codes[0].slice(4) + " un.");
     } else if(codes.length === 1 && codes[0] === "sim"){
       partes.push(nome);
@@ -933,6 +986,7 @@ function limparFormulario(){
   document.getElementById("fObs").value = "";
   document.querySelectorAll("#equipGroups .code-chip").forEach(chip => chip.classList.remove("on"));
   document.querySelectorAll("#equipGroups .qty-input").forEach(inp => inp.value = "");
+  document.querySelectorAll("#equipGroups .tipoqty-input").forEach(inp => inp.value = "");
   document.querySelectorAll("#equipGroups .multi-texto-container").forEach(container => {
     const itemId = container.dataset.itemId;
     const gi = indiceGrupoDoItem(itemId);
@@ -1212,8 +1266,10 @@ function imprimirTalao(id){
   const linhasEquip = Object.keys(r.equipamento || {}).map(itemId => {
     const codes = r.equipamento[itemId];
     const nome = nomeItem(itemId);
+    const item = buscarItem(itemId);
     let valor;
-    if(codes.length === 1 && String(codes[0]).startsWith("qtd:")) valor = codes[0].slice(4) + " un.";
+    if(item && item.tiposQuantidade) valor = codes.map(c => c.replace(":", ": ")).join(", ");
+    else if(codes.length === 1 && String(codes[0]).startsWith("qtd:")) valor = codes[0].slice(4) + " un.";
     else if(codes.length === 1 && codes[0] === "sim") valor = "—";
     else valor = codes.join(", ");
     return `<tr><td>${escapeHtml(nome)}</td><td>${escapeHtml(valor)}</td></tr>`;
