@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registo de Equipamento de Campo</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg: #1E2B24;
+    --panel: #263A2F;
+    --panel-2: #2E4436;
+    --line: #3C5548;
+    --text: #EDE9DC;
+    --text-dim: #A9B8AC;
+    --sea: #4FA8A3;
+    --sea-dim: #2E5C58;
+    --land: #C9A46A;
+    --land-dim: #6B5A3A;
+    --warn: #D97C5F;
+    --ok: #7FB07A;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{padding-bottom:60px;}
+  header{
+    padding:22px 18px 16px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg, var(--panel-2), var(--bg));
+  }
+  header h1{
+    margin:0;
+    font-size:1.35rem;
+    letter-spacing:0.2px;
+    font-weight:700;
+  }
+  header .sub{
+    margin-top:4px;
+    color:var(--text-dim);
+    font-size:0.85rem;
+    font-family:var(--mono);
+  }
+  .sync-banner{
+    margin-top:10px;
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    font-size:0.76rem;
+    font-family:var(--mono);
+    padding:5px 10px;
+    border-radius:6px;
+    border:1px solid var(--line);
+  }
+  .sync-banner.on{color:var(--ok);border-color:var(--ok);}
+  .sync-banner.off{color:var(--land);border-color:var(--land-dim);}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;}
+  nav.tabs{
+    display:flex;
+    gap:2px;
+    margin:14px 0 0;
+    background:var(--panel);
+    border-radius:8px;
+    padding:3px;
+    max-width:420px;
+  }
+  nav.tabs button{
+    flex:1;
+    padding:9px 8px;
+    background:transparent;
+    border:none;
+    color:var(--text-dim);
+    font-family:var(--sans);
+    font-size:0.88rem;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  nav.tabs button.active{
+    background:var(--sea-dim);
+    color:var(--text);
+  }
+  main{max-width:820px;margin:0 auto;padding:18px;}
+  section{display:none;}
+  section.active{display:block;}
+
+  .field-row{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    margin-bottom:14px;
+  }
+  .field{display:flex;flex-direction:column;gap:5px;}
+  .field.full{grid-column:1/-1;}
+  label{font-size:0.78rem;color:var(--text-dim);}
+  input[type=text], input[type=date], input[type=number], textarea, select{
+    background:var(--panel);
+    border:1px solid var(--line);
+    color:var(--text);
+    padding:9px 10px;
+    border-radius:6px;
+    font-family:var(--sans);
+    font-size:0.92rem;
+  }
+  textarea{resize:vertical;min-height:56px;}
+  input:focus, textarea:focus, button:focus, select:focus{
+    outline:2px solid var(--sea);
+    outline-offset:1px;
+  }
+  .seq-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-family:var(--mono);
+    background:var(--panel);
+    border:1px solid var(--line);
+    padding:8px 12px;
+    border-radius:6px;
+    color:var(--sea);
+    font-size:1rem;
+    margin-bottom:14px;
+  }
+  .seq-badge span.n{font-weight:700;font-size:1.15rem;}
+
+  .locale-toggle{display:flex;gap:10px;margin-bottom:16px;}
+  .locale-toggle label{
+    display:flex;align-items:center;gap:6px;
+    background:var(--panel);border:1px solid var(--line);
+    padding:8px 12px;border-radius:6px;font-size:0.85rem;color:var(--text);
+    cursor:pointer;
+  }
+  .locale-toggle input{accent-color:var(--sea);}
+
+  details.group{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    margin-bottom:10px;
+    overflow:hidden;
+  }
+  details.group summary{
+    padding:11px 14px;
+    cursor:pointer;
+    font-weight:600;
+    font-size:0.9rem;
+    list-style:none;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  details.group summary::-webkit-details-marker{display:none;}
+  details.group summary .count{
+    font-family:var(--mono);
+    font-size:0.78rem;
+    color:var(--sea);
+    background:var(--sea-dim);
+    padding:2px 8px;
+    border-radius:10px;
+  }
+  details.group summary .count.empty{background:transparent;color:var(--text-dim);}
+  .group-body{padding:4px 14px 14px;border-top:1px solid var(--line);}
+  .item-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:8px 0;
+    border-bottom:1px solid var(--line);
+    gap:10px;
+  }
+  .item-row:last-child{border-bottom:none;}
+  .item-name{font-size:0.87rem;}
+  .codes{display:flex;flex-wrap:wrap;gap:6px;}
+  .code-chip{
+    font-family:var(--mono);
+    font-size:0.78rem;
+    padding:5px 9px;
+    border-radius:5px;
+    border:1px solid var(--line);
+    background:var(--bg);
+    color:var(--text-dim);
+    cursor:pointer;
+    user-select:none;
+  }
+  .code-chip.on{
+    background:var(--sea-dim);
+    border-color:var(--sea);
+    color:var(--text);
+  }
+  .code-chip.conflito{
+    border-color:var(--warn);
+  }
+  .code-chip.single{min-width:44px;text-align:center;}
+
+  button.primary{
+    background:var(--sea);
+    color:#12201B;
+    border:none;
+    padding:11px 18px;
+    border-radius:7px;
+    font-weight:700;
+    font-size:0.92rem;
+    cursor:pointer;
+    width:100%;
+    margin-top:6px;
+  }
+  button.secondary{
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--text-dim);
+    padding:9px 14px;
+    border-radius:7px;
+    font-size:0.85rem;
+    cursor:pointer;
+  }
+  .actions-row{display:flex;gap:8px;margin-top:10px;}
+  .actions-row button{flex:1;}
+
+  .sig-block{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:12px 14px;
+    margin-bottom:14px;
+  }
+  .sig-block h3{margin:0 0 8px;font-size:0.85rem;color:var(--text-dim);font-weight:600;}
+  .sig-canvas-wrap{
+    background:var(--bg);
+    border:1px dashed var(--line);
+    border-radius:6px;
+    touch-action:none;
+  }
+  canvas.sig-canvas{
+    width:100%;
+    height:120px;
+    display:block;
+    touch-action:none;
+  }
+  .sig-actions{margin-top:8px;}
+
+  /* Lista */
+  .list-toolbar{
+    display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;
+  }
+  .list-toolbar input, .list-toolbar select{flex:1;min-width:140px;}
+  .list-toolbar button{white-space:nowrap;}
+  table{width:100%;border-collapse:collapse;font-size:0.83rem;}
+  thead th{
+    text-align:left;
+    color:var(--text-dim);
+    font-weight:600;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.4px;
+    padding:8px 8px;
+    border-bottom:1px solid var(--line);
+  }
+  tbody td{
+    padding:9px 8px;
+    border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  tbody tr:hover{background:var(--panel);}
+  .n-cell{font-family:var(--mono);color:var(--sea);font-weight:700;}
+  .status-pill{
+    font-size:0.72rem;
+    padding:3px 8px;
+    border-radius:10px;
+    font-family:var(--mono);
+  }
+  .status-pill.out{background:var(--warn);color:#2A1710;}
+  .status-pill.in{background:var(--ok);color:#0F2410;}
+  .row-actions{display:flex;gap:6px;flex-wrap:wrap;}
+  .row-actions button{
+    font-size:0.75rem;
+    padding:5px 9px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    border-radius:5px;
+    cursor:pointer;
+  }
+  .row-actions button.danger{color:var(--warn);}
+  .equip-list-cell{font-family:var(--mono);font-size:0.75rem;color:var(--text-dim);max-width:220px;}
+  .empty-state{
+    text-align:center;
+    padding:40px 10px;
+    color:var(--text-dim);
+  }
+  .table-wrap{overflow-x:auto;}
+  footer.hint{
+    max-width:820px;margin:26px auto 0;padding:0 18px;
+    color:var(--text-dim);font-size:0.76rem;line-height:1.5;
+  }
+  @media (max-width:560px){
+    .field-row{grid-template-columns:1fr;}
+  }
+
+  /* Talao de impressao */
+  #areaImpressao{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #areaImpressao, #areaImpressao *{visibility:visible;}
+    #areaImpressao{
+      display:block;
+      position:absolute;top:0;left:0;width:100%;
+      background:#fff;color:#111;padding:24px;font-family:var(--sans);
+    }
+    #areaImpressao h2{margin:0 0 4px;}
+    #areaImpressao .linha{margin:6px 0;font-size:0.95rem;}
+    #areaImpressao table{width:100%;border-collapse:collapse;margin-top:10px;}
+    #areaImpressao td, #areaImpressao th{border:1px solid #999;padding:5px 7px;font-size:0.85rem;}
+    #areaImpressao .assinaturas{display:flex;gap:24px;margin-top:24px;}
+    #areaImpressao .assinaturas div{flex:1;text-align:center;}
+    #areaImpressao .assinaturas img{max-width:100%;height:70px;object-fit:contain;border-bottom:1px solid #333;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Registo de Equipamento de Campo</h1>
+  <div class="sub">saídas &amp; devoluções de material — mar / terra</div>
+  <div id="syncBanner" class="sync-banner off"><span class="sync-dot"></span><span id="syncBannerTexto">a verificar sincronização…</span></div>
+  <nav class="tabs">
+    <button id="tabNovo" class="active" onclick="switchTab('novo')">Novo registo</button>
+    <button id="tabLista" onclick="switchTab('lista')">Histórico</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ==================== NOVO REGISTO ==================== -->
+  <section id="secNovo" class="active">
+
+    <div class="seq-badge">N.º de saída <span class="n" id="seqPreview">—</span></div>
+
+    <div class="field-row">
+      <div class="field">
+        <label for="fDtSaida">Data de saída</label>
+        <input type="date" id="fDtSaida">
+      </div>
+      <div class="field">
+        <label for="fUtilizador">Utilizador</label>
+        <input type="text" id="fUtilizador" placeholder="Nome de quem levanta">
+      </div>
+    </div>
+
+    <div class="locale-toggle">
+      <label><input type="checkbox" id="fMar"> Mar</label>
+      <label><input type="checkbox" id="fTerra"> Terra</label>
+    </div>
+
+    <div id="equipGroups"></div>
+
+    <div class="field-row" style="margin-top:6px;">
+      <div class="field">
+        <label for="fDtDevolucao">Data de devolução (opcional)</label>
+        <input type="date" id="fDtDevolucao">
+      </div>
+      <div class="field">
+        <label for="fObs">Observações</label>
+        <input type="text" id="fObs" placeholder="Notas, avarias, etc.">
+      </div>
+    </div>
+
+    <div class="sig-block">
+      <h3>Assinatura de levantamento</h3>
+      <div class="sig-canvas-wrap"><canvas id="sigLevantamento" class="sig-canvas" width="600" height="180"></canvas></div>
+      <div class="sig-actions"><button class="secondary" type="button" onclick="limparCanvas('sigLevantamento')">Limpar assinatura</button></div>
+    </div>
+
+    <div class="sig-block">
+      <h3>Assinatura de devolução (preencher quando o material voltar)</h3>
+      <div class="sig-canvas-wrap"><canvas id="sigDevolucao" class="sig-canvas" width="600" height="180"></canvas></div>
+      <div class="sig-actions"><button class="secondary" type="button" onclick="limparCanvas('sigDevolucao')">Limpar assinatura</button></div>
+    </div>
+
+    <button class="primary" onclick="guardarRegisto()">Guardar registo</button>
+    <div id="editNotice" style="display:none;margin-top:8px;color:var(--land);font-size:0.82rem;"></div>
+  </section>
+
+  <!-- ==================== HISTÓRICO ==================== -->
+  <section id="secLista">
+    <div class="list-toolbar">
+      <input type="text" id="filtroTexto" placeholder="Utilizador ou observações..." oninput="renderLista()">
+      <input type="text" id="filtroEquipamento" placeholder="Equipamento ou código (ex: R2, GoPro)..." oninput="renderLista()">
+    </div>
+    <div class="list-toolbar">
+      <select id="filtroAno" onchange="renderLista()"><option value="">Todos os anos</option></select>
+      <input type="date" id="filtroDataDe" title="Desde" onchange="renderLista()">
+      <input type="date" id="filtroDataAte" title="Até" onchange="renderLista()">
+      <select id="filtroEstado" onchange="renderLista()">
+        <option value="">Todos os estados</option>
+        <option value="fora">Em campo (por devolver)</option>
+        <option value="devolvido">Devolvido</option>
+      </select>
+      <button class="secondary" onclick="limparFiltros()">Limpar filtros</button>
+      <button class="secondary" onclick="exportarCSV()">Exportar CSV</button>
+    </div>
+    <div class="table-wrap">
+      <table id="tabelaRegistos">
+        <thead>
+          <tr>
+            <th>N.º</th>
+            <th>Saída</th>
+            <th>Utilizador</th>
+            <th>Local</th>
+            <th>Equipamento</th>
+            <th>Estado</th>
+            <th>Devolução</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbodyRegistos"></tbody>
+      </table>
+    </div>
+    <div id="emptyState" class="empty-state" style="display:none;">Ainda não há registos guardados.</div>
+  </section>
+
+</main>
+
+<footer class="hint">Se a sincronização Firebase estiver configurada, os registos ficam partilhados em tempo real entre todos os dispositivos. Sem configuração, os dados ficam só neste dispositivo (armazenamento local). Usa "Exportar CSV" regularmente para teres uma cópia de segurança.</footer>
+
+<div id="areaImpressao"></div>
+
+<script>
+// =====================================================================
+// CONFIGURAÇÃO FIREBASE — cola aqui a tua configuração quando a tiveres.
+// Enquanto estiver vazio, a app funciona só em modo local (localStorage).
+// =====================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyCkScMiuaBwoT9BGF43jOUaL6nNDogYLZk",
+  authDomain: "equip-campo.firebaseapp.com",
+  projectId: "equip-campo",
+  storageBucket: "equip-campo.firebasestorage.app",
+  messagingSenderId: "997079796847",
+  appId: "1:997079796847:web:d669648443e1b13bbdd19a",
+  measurementId: "G-LVTXD9HRRL"
+};
+const COLECAO = "registosEquipamentoCampo";
+const CONTADOR_DOC = "registoEquipamentoCampo";
+
+const firebaseAtivo = !!(firebaseConfig.apiKey && firebaseConfig.projectId);
+let db = null;
+
+// ---------- Definição do equipamento ----------
+const GRUPOS = [
+  { nome: "Binóculos", itens: [
+    { id: "bin_aves", nome: "Binóculo Aves", codigos: ["R","R1","R2","R3","R4","R5","R6","S"] },
+    { id: "bin_bushnell", nome: "Binóculo Bushnell", codigos: ["G","H","I","J","K","L"] },
+    { id: "bin_steinler_mil", nome: "Binóculo Steinler Militar", codigos: ["C","D"] },
+    { id: "bin_steinler_nav", nome: "Binóculo Steinler Navigator", codigos: ["E","F"] },
+  ]},
+  { nome: "GoPro", itens: [
+    { id: "gopro_maquina", nome: "GO PRO Máquina", codigos: ["T","U"] },
+    { id: "gopro_caixa", nome: "GO PRO Caixa Estanque", codigos: ["T","U"] },
+    { id: "gopro_stick", nome: "GO PRO Stick", codigos: ["T","U"] },
+    { id: "gopro_carregador", nome: "GO PRO Carregador (Cabo)", codigos: ["T","U"] },
+    { id: "gopro_mala", nome: "GO PRO Mala Transporte", codigos: ["T","U"] },
+  ]},
+  { nome: "Fotografia", itens: [
+    { id: "nikon_corpo", nome: "Nikon D500 Corpo", codigos: ["M","N"] },
+    { id: "nikon_70_300", nome: "Nikon AF-P 70-300mm - Objetiva", codigos: ["M","N"] },
+    { id: "nikon_28_80", nome: "Nikon AF-28-80mm - Objetiva", codigos: [] },
+    { id: "sony_xqd", nome: "Sony G Series XQD - 64GB - Crt Mem", codigos: ["M","N"] },
+    { id: "nikon_carregador", nome: "NIKON Carregador Máquinas", codigos: ["M","N"] },
+    { id: "canon_sx740", nome: "Canon SX740HS", codigos: ["X","Y"] },
+    { id: "canon_sx740_adap", nome: "Canon SX740HS Adaptador+Carregador", codigos: ["X","Y"] },
+    { id: "bushnell_armadilha", nome: "Câmaras Bushnell (Armadilha)", codigos: ["A1","A2","A3"] },
+    { id: "cartao_32", nome: "Cartão de Memória 32GB", codigos: ["M1","M2","M3","M4","M5","M6"] },
+    { id: "cartao_16", nome: "Cartão de Memória 16GB", codigos: ["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11"] },
+  ]},
+  { nome: "GPS &amp; Localização", itens: [
+    { id: "gps", nome: "GPS", codigos: ["1","2","3","4"] },
+    { id: "gps_plb", nome: "GPS Personal Locator Beacon", codigos: ["1-J"] },
+  ]},
+  { nome: "Informática", itens: [
+    { id: "surface_pro", nome: "Surface Pro", codigos: ["SP1","SP2"] },
+    { id: "surface_go", nome: "Surface Go 2", codigos: ["1","2"] },
+    { id: "tablet", nome: "Tablet", codigos: ["1","2"] },
+    { id: "router", nome: "Router wireless", codigos: ["1-H"] },
+    { id: "usbc_dock", nome: "USB-C Dock", codigos: ["01","02","03"] },
+  ]},
+  { nome: "Rádio &amp; Diversos", itens: [
+    { id: "radio_vhf", nome: "Rádio VHF/Carregador/Auricular", codigos: ["1-I"] },
+    { id: "pilhas", nome: "Pilhas recarregáveis", codigos: [] },
+    { id: "carregador_pilhas", nome: "Carregador pilhas", codigos: ["1","2","3","4"] },
+  ]},
+];
+
+const STORAGE_KEY = "registoEquipamentoCampo.v1";
+let registos = [];
+let editandoId = null;
+
+// ---------- Arranque Firebase ----------
+function iniciarFirebase(){
+  const banner = document.getElementById("syncBanner");
+  const texto = document.getElementById("syncBannerTexto");
+  if(!firebaseAtivo){
+    banner.className = "sync-banner off";
+    texto.textContent = "modo local — sincronização não configurada";
+    carregarLocal();
+    return;
+  }
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    db.enablePersistence().catch(()=>{});
+    banner.className = "sync-banner on";
+    texto.textContent = "sincronizado em tempo real (Firebase)";
+    db.collection(COLECAO).onSnapshot(snapshot => {
+      registos = snapshot.docs.map(d => d.data());
+      renderLista();
+      construirFiltroAno();
+    }, err => {
+      banner.className = "sync-banner off";
+      texto.textContent = "erro de sincronização — a usar cópia local";
+      carregarLocal();
+    });
+  }catch(e){
+    banner.className = "sync-banner off";
+    texto.textContent = "erro de sincronização — a usar cópia local";
+    carregarLocal();
+  }
+}
+
+function carregarLocal(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    registos = raw ? JSON.parse(raw) : [];
+  }catch(e){ registos = []; }
+  renderLista();
+  construirFiltroAno();
+}
+function guardarStorageLocal(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(registos));
+}
+
+function proximoNumeroLocal(){
+  if(registos.length === 0) return 1;
+  return Math.max(...registos.map(r => r.numero)) + 1;
+}
+
+async function obterProximoNumero(){
+  if(!firebaseAtivo) return proximoNumeroLocal();
+  const ref = db.collection("contadores").doc(CONTADOR_DOC);
+  return db.runTransaction(async (t) => {
+    const doc = await t.get(ref);
+    const atual = doc.exists && doc.data().seguinte ? doc.data().seguinte : (proximoNumeroLocal());
+    t.set(ref, { seguinte: atual + 1 }, { merge: true });
+    return atual;
+  });
+}
+
+// ---------- Construir o formulário ----------
+function construirFormulario(){
+  const container = document.getElementById("equipGroups");
+  container.innerHTML = "";
+  GRUPOS.forEach((grupo, gi) => {
+    const det = document.createElement("details");
+    det.className = "group";
+    det.open = gi === 0;
+    const summary = document.createElement("summary");
+    summary.innerHTML = `<span>${grupo.nome}</span><span class="count empty" data-group="${gi}">0 selecionados</span>`;
+    det.appendChild(summary);
+    const body = document.createElement("div");
+    body.className = "group-body";
+    grupo.itens.forEach(item => {
+      const row = document.createElement("div");
+      row.className = "item-row";
+      const label = document.createElement("div");
+      label.className = "item-name";
+      label.textContent = item.nome;
+      row.appendChild(label);
+      const codesDiv = document.createElement("div");
+      codesDiv.className = "codes";
+      if(item.codigos.length === 0){
+        const chip = document.createElement("div");
+        chip.className = "code-chip";
+        chip.textContent = "Levado";
+        chip.dataset.itemId = item.id;
+        chip.dataset.code = "sim";
+        chip.onclick = () => toggleChip(chip, gi);
+        codesDiv.appendChild(chip);
+      } else {
+        item.codigos.forEach(code => {
+          const chip = document.createElement("div");
+          chip.className = "code-chip single";
+          chip.textContent = code;
+          chip.dataset.itemId = item.id;
+          chip.dataset.code = code;
+          chip.onclick = () => toggleChip(chip, gi);
+          codesDiv.appendChild(chip);
+        });
+      }
+      row.appendChild(codesDiv);
+      body.appendChild(row);
+    });
+    det.appendChild(body);
+    container.appendChild(det);
+  });
+}
+
+function verificarConflito(itemId, code){
+  return registos.find(r =>
+    !r.dtDevolucao &&
+    r.id !== editandoId &&
+    r.equipamento && r.equipamento[itemId] && r.equipamento[itemId].includes(code)
+  );
+}
+
+function toggleChip(chip, groupIndex){
+  const ligar = !chip.classList.contains("on");
+  if(ligar){
+    const itemId = chip.dataset.itemId;
+    const code = chip.dataset.code;
+    const conflito = verificarConflito(itemId, code);
+    if(conflito){
+      const nome = nomeItem(itemId);
+      const rotulo = code === "sim" ? nome : (nome + " (" + code + ")");
+      const continuar = confirm(
+        `Atenção: "${rotulo}" já está registado como em campo no registo n.º ${conflito.numero} ` +
+        `(${conflito.utilizador}, saída ${conflito.dtSaida}), ainda sem devolução.\n\n` +
+        `Selecionar mesmo assim?`
+      );
+      if(!continuar) return;
+    }
+  }
+  chip.classList.toggle("on");
+  atualizarContagemGrupo(groupIndex);
+}
+
+function atualizarContagemGrupo(gi){
+  const group = document.querySelectorAll("#equipGroups details")[gi];
+  const total = group.querySelectorAll(".code-chip.on").length;
+  const badge = group.querySelector(".count");
+  badge.textContent = total + " selecionado" + (total === 1 ? "" : "s");
+  badge.classList.toggle("empty", total === 0);
+}
+
+function recolherEquipamentoSelecionado(){
+  const resultado = {};
+  document.querySelectorAll("#equipGroups .code-chip.on").forEach(chip => {
+    const itemId = chip.dataset.itemId;
+    const code = chip.dataset.code;
+    if(!resultado[itemId]) resultado[itemId] = [];
+    resultado[itemId].push(code);
+  });
+  return resultado;
+}
+
+function aplicarEquipamentoSelecionado(equip){
+  document.querySelectorAll("#equipGroups .code-chip").forEach(chip => chip.classList.remove("on"));
+  Object.keys(equip || {}).forEach(itemId => {
+    equip[itemId].forEach(code => {
+      const sel = document.querySelector(`#equipGroups .code-chip[data-item-id="${itemId}"][data-code="${CSS.escape(code)}"]`);
+      if(sel) sel.classList.add("on");
+    });
+  });
+  document.querySelectorAll("#equipGroups details").forEach((det, gi) => atualizarContagemGrupo(gi));
+}
+
+function nomeItem(itemId){
+  for(const g of GRUPOS){
+    for(const it of g.itens){
+      if(it.id === itemId) return it.nome;
+    }
+  }
+  return itemId;
+}
+
+function resumoEquipamento(equip){
+  const partes = [];
+  Object.keys(equip || {}).forEach(itemId => {
+    const codes = equip[itemId];
+    const nome = nomeItem(itemId);
+    if(codes.length === 1 && codes[0] === "sim"){
+      partes.push(nome);
+    } else {
+      partes.push(nome + " (" + codes.join(", ") + ")");
+    }
+  });
+  return partes.join("; ") || "—";
+}
+
+// ---------- Assinaturas (canvas) ----------
+function configurarCanvas(canvas){
+  function redimensionar(){
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const antigo = document.createElement("canvas");
+    antigo.width = canvas.width; antigo.height = canvas.height;
+    antigo.getContext("2d").drawImage(canvas, 0, 0);
+    canvas.width = rect.width * dpr;
+    canvas.height = 120 * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    ctx.strokeStyle = "#EDE9DC";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+  }
+  redimensionar();
+  window.addEventListener("resize", redimensionar);
+
+  let desenhando = false;
+  function pos(e){
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+  function start(e){
+    desenhando = true;
+    const p = pos(e);
+    const ctx = canvas.getContext("2d");
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    e.preventDefault();
+  }
+  function move(e){
+    if(!desenhando) return;
+    const p = pos(e);
+    const ctx = canvas.getContext("2d");
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    e.preventDefault();
+  }
+  function end(){ desenhando = false; }
+  canvas.addEventListener("mousedown", start);
+  canvas.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  canvas.addEventListener("touchstart", start, {passive:false});
+  canvas.addEventListener("touchmove", move, {passive:false});
+  canvas.addEventListener("touchend", end);
+}
+
+function limparCanvas(id){
+  const c = document.getElementById(id);
+  const ctx = c.getContext("2d");
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,c.width,c.height);
+  ctx.restore();
+}
+
+function canvasVazio(canvas){
+  const ctx = canvas.getContext("2d");
+  const data = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+  for(let i=3;i<data.length;i+=4){ if(data[i] !== 0) return false; }
+  return true;
+}
+
+function carregarAssinaturaNoCanvas(canvasId, dataUrl){
+  const c = document.getElementById(canvasId);
+  limparCanvas(canvasId);
+  if(!dataUrl) return;
+  const img = new Image();
+  img.onload = () => {
+    const ctx = c.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+    ctx.drawImage(img, 0, 0, c.width / dpr, c.height / dpr);
+  };
+  img.src = dataUrl;
+}
+
+// ---------- Guardar / limpar ----------
+function limparFormulario(){
+  editandoId = null;
+  document.getElementById("editNotice").style.display = "none";
+  document.getElementById("fDtSaida").value = new Date().toISOString().slice(0,10);
+  document.getElementById("fUtilizador").value = "";
+  document.getElementById("fMar").checked = false;
+  document.getElementById("fTerra").checked = false;
+  document.getElementById("fDtDevolucao").value = "";
+  document.getElementById("fObs").value = "";
+  document.querySelectorAll("#equipGroups .code-chip").forEach(chip => chip.classList.remove("on"));
+  document.querySelectorAll("#equipGroups details").forEach((det, gi) => atualizarContagemGrupo(gi));
+  limparCanvas("sigLevantamento");
+  limparCanvas("sigDevolucao");
+  atualizarSeqPreview();
+}
+
+async function atualizarSeqPreview(){
+  document.getElementById("seqPreview").textContent = "…";
+  const n = await obterProximoNumeroPreview();
+  document.getElementById("seqPreview").textContent = n;
+}
+async function obterProximoNumeroPreview(){
+  if(!firebaseAtivo) return proximoNumeroLocal();
+  try{
+    const doc = await db.collection("contadores").doc(CONTADOR_DOC).get();
+    return doc.exists && doc.data().seguinte ? doc.data().seguinte : proximoNumeroLocal();
+  }catch(e){
+    return proximoNumeroLocal();
+  }
+}
+
+async function guardarRegisto(){
+  const dtSaida = document.getElementById("fDtSaida").value;
+  const utilizador = document.getElementById("fUtilizador").value.trim();
+  if(!dtSaida || !utilizador){
+    alert("Preenche pelo menos a data de saída e o utilizador.");
+    return;
+  }
+  const equip = recolherEquipamentoSelecionado();
+  const canvasLev = document.getElementById("sigLevantamento");
+  const canvasDev = document.getElementById("sigDevolucao");
+
+  let numero, id, assinaturaAnteriorLev = null, assinaturaAnteriorDev = null;
+  if(editandoId !== null){
+    const existente = registos.find(r => r.id === editandoId);
+    numero = existente.numero;
+    id = existente.id;
+    assinaturaAnteriorLev = existente.assinaturaLevantamento || null;
+    assinaturaAnteriorDev = existente.assinaturaDevolucao || null;
+  } else {
+    numero = await obterProximoNumero();
+    id = Date.now();
+  }
+
+  const registo = {
+    numero,
+    id,
+    dtSaida,
+    utilizador,
+    mar: document.getElementById("fMar").checked,
+    terra: document.getElementById("fTerra").checked,
+    equipamento: equip,
+    dtDevolucao: document.getElementById("fDtDevolucao").value || null,
+    observacoes: document.getElementById("fObs").value.trim(),
+    assinaturaLevantamento: canvasVazio(canvasLev) ? assinaturaAnteriorLev : canvasLev.toDataURL("image/png"),
+    assinaturaDevolucao: canvasVazio(canvasDev) ? assinaturaAnteriorDev : canvasDev.toDataURL("image/png"),
+  };
+
+  if(firebaseAtivo){
+    try{
+      await db.collection(COLECAO).doc(String(id)).set(registo);
+    }catch(e){
+      alert("Não foi possível sincronizar (sem ligação?). O registo foi guardado só neste dispositivo.");
+      aplicarRegistoLocalmente(registo);
+    }
+  } else {
+    aplicarRegistoLocalmente(registo);
+  }
+
+  limparFormulario();
+  switchTab("lista");
+  renderLista();
+}
+
+function aplicarRegistoLocalmente(registo){
+  const idx = registos.findIndex(r => r.id === registo.id);
+  if(idx >= 0) registos[idx] = registo; else registos.push(registo);
+  guardarStorageLocal();
+}
+
+function editarRegisto(id){
+  const r = registos.find(x => x.id === id);
+  if(!r) return;
+  editandoId = id;
+  document.getElementById("fDtSaida").value = r.dtSaida;
+  document.getElementById("fUtilizador").value = r.utilizador;
+  document.getElementById("fMar").checked = r.mar;
+  document.getElementById("fTerra").checked = r.terra;
+  document.getElementById("fDtDevolucao").value = r.dtDevolucao || "";
+  document.getElementById("fObs").value = r.observacoes || "";
+  aplicarEquipamentoSelecionado(r.equipamento);
+  carregarAssinaturaNoCanvas("sigLevantamento", r.assinaturaLevantamento);
+  carregarAssinaturaNoCanvas("sigDevolucao", r.assinaturaDevolucao);
+  document.getElementById("seqPreview").textContent = r.numero;
+  document.getElementById("editNotice").style.display = "block";
+  document.getElementById("editNotice").textContent = "A editar o registo n.º " + r.numero + ".";
+  switchTab("novo");
+}
+
+async function marcarDevolvidoHoje(id){
+  const r = registos.find(x => x.id === id);
+  if(!r) return;
+  r.dtDevolucao = new Date().toISOString().slice(0,10);
+  if(firebaseAtivo){
+    try{ await db.collection(COLECAO).doc(String(id)).set(r); }
+    catch(e){ aplicarRegistoLocalmente(r); }
+  } else {
+    aplicarRegistoLocalmente(r);
+  }
+  renderLista();
+}
+
+async function apagarRegisto(id){
+  if(!confirm("Apagar este registo definitivamente?")) return;
+  if(firebaseAtivo){
+    try{ await db.collection(COLECAO).doc(String(id)).delete(); }
+    catch(e){ alert("Não foi possível apagar na sincronização (sem ligação?)."); }
+  }
+  registos = registos.filter(r => r.id !== id);
+  guardarStorageLocal();
+  renderLista();
+}
+
+// ---------- Lista / Histórico / Filtros ----------
+function construirFiltroAno(){
+  const select = document.getElementById("filtroAno");
+  const atual = select.value;
+  const anos = [...new Set(registos.map(r => (r.dtSaida || "").slice(0,4)).filter(Boolean))].sort().reverse();
+  select.innerHTML = '<option value="">Todos os anos</option>' + anos.map(a => `<option value="${a}">${a}</option>`).join("");
+  if(anos.includes(atual)) select.value = atual;
+}
+
+function limparFiltros(){
+  document.getElementById("filtroTexto").value = "";
+  document.getElementById("filtroEquipamento").value = "";
+  document.getElementById("filtroAno").value = "";
+  document.getElementById("filtroDataDe").value = "";
+  document.getElementById("filtroDataAte").value = "";
+  document.getElementById("filtroEstado").value = "";
+  renderLista();
+}
+
+function renderLista(){
+  const texto = document.getElementById("filtroTexto").value.trim().toLowerCase();
+  const textoEquip = document.getElementById("filtroEquipamento").value.trim().toLowerCase();
+  const ano = document.getElementById("filtroAno").value;
+  const dataDe = document.getElementById("filtroDataDe").value;
+  const dataAte = document.getElementById("filtroDataAte").value;
+  const estado = document.getElementById("filtroEstado").value;
+  const tbody = document.getElementById("tbodyRegistos");
+  tbody.innerHTML = "";
+
+  let lista = [...registos].sort((a,b) => b.numero - a.numero);
+
+  lista = lista.filter(r => {
+    if(estado === "fora" && r.dtDevolucao) return false;
+    if(estado === "devolvido" && !r.dtDevolucao) return false;
+    if(ano && !(r.dtSaida || "").startsWith(ano)) return false;
+    if(dataDe && r.dtSaida < dataDe) return false;
+    if(dataAte && r.dtSaida > dataAte) return false;
+    if(texto){
+      const alvo = ((r.utilizador||"") + " " + (r.observacoes||"")).toLowerCase();
+      if(!alvo.includes(texto)) return false;
+    }
+    if(textoEquip){
+      const alvoEquip = resumoEquipamento(r.equipamento).toLowerCase();
+      if(!alvoEquip.includes(textoEquip)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById("emptyState").style.display = lista.length === 0 ? "block" : "none";
+
+  lista.forEach(r => {
+    const tr = document.createElement("tr");
+    const local = [r.mar ? "Mar" : null, r.terra ? "Terra" : null].filter(Boolean).join(" / ") || "—";
+    const estadoTag = r.dtDevolucao
+      ? `<span class="status-pill in">Devolvido ${r.dtDevolucao}</span>`
+      : `<span class="status-pill out">Em campo</span>`;
+    tr.innerHTML = `
+      <td class="n-cell">${r.numero}</td>
+      <td>${r.dtSaida}</td>
+      <td>${escapeHtml(r.utilizador)}</td>
+      <td>${local}</td>
+      <td class="equip-list-cell">${escapeHtml(resumoEquipamento(r.equipamento))}</td>
+      <td>${estadoTag}</td>
+      <td>${r.dtDevolucao || "—"}</td>
+      <td>
+        <div class="row-actions">
+          <button onclick="editarRegisto(${r.id})">Editar</button>
+          ${!r.dtDevolucao ? `<button onclick="marcarDevolvidoHoje(${r.id})">Devolver hoje</button>` : ""}
+          <button onclick="imprimirTalao(${r.id})">Talão</button>
+          <button class="danger" onclick="apagarRegisto(${r.id})">Apagar</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function escapeHtml(str){
+  const div = document.createElement("div");
+  div.textContent = str || "";
+  return div.innerHTML;
+}
+
+// ---------- Talão de impressão ----------
+function imprimirTalao(id){
+  const r = registos.find(x => x.id === id);
+  if(!r) return;
+  const local = [r.mar ? "Mar" : null, r.terra ? "Terra" : null].filter(Boolean).join(" / ") || "—";
+  const linhasEquip = Object.keys(r.equipamento || {}).map(itemId => {
+    const codes = r.equipamento[itemId];
+    const nome = nomeItem(itemId);
+    const valor = (codes.length === 1 && codes[0] === "sim") ? "—" : codes.join(", ");
+    return `<tr><td>${escapeHtml(nome)}</td><td>${escapeHtml(valor)}</td></tr>`;
+  }).join("");
+  const html = `
+    <h2>Talão de Equipamento de Campo</h2>
+    <div class="linha"><strong>N.º de saída:</strong> ${r.numero}</div>
+    <div class="linha"><strong>Data de saída:</strong> ${r.dtSaida}</div>
+    <div class="linha"><strong>Utilizador:</strong> ${escapeHtml(r.utilizador)}</div>
+    <div class="linha"><strong>Local:</strong> ${local}</div>
+    <table><thead><tr><th>Equipamento</th><th>Código</th></tr></thead><tbody>${linhasEquip || '<tr><td colspan="2">—</td></tr>'}</tbody></table>
+    <div class="linha" style="margin-top:14px;"><strong>Data de devolução:</strong> ${r.dtDevolucao || "por devolver"}</div>
+    ${r.observacoes ? `<div class="linha"><strong>Observações:</strong> ${escapeHtml(r.observacoes)}</div>` : ""}
+    <div class="assinaturas">
+      <div>
+        ${r.assinaturaLevantamento ? `<img src="${r.assinaturaLevantamento}">` : '<div style="height:70px;border-bottom:1px solid #333;"></div>'}
+        <div>Assinatura de levantamento</div>
+      </div>
+      <div>
+        ${r.assinaturaDevolucao ? `<img src="${r.assinaturaDevolucao}">` : '<div style="height:70px;border-bottom:1px solid #333;"></div>'}
+        <div>Assinatura de devolução</div>
+      </div>
+    </div>
+  `;
+  document.getElementById("areaImpressao").innerHTML = html;
+  window.print();
+}
+
+// ---------- Export CSV ----------
+function exportarCSV(){
+  if(registos.length === 0){
+    alert("Não há registos para exportar.");
+    return;
+  }
+  const header = ["N.saida","Dt.Saida","Utilizador","Mar","Terra","Equipamento","Dt.Devolucao","Observacoes"];
+  const linhas = [header.join(";")];
+  [...registos].sort((a,b) => a.numero - b.numero).forEach(r => {
+    const linha = [
+      r.numero,
+      r.dtSaida,
+      csvSafe(r.utilizador),
+      r.mar ? "Sim" : "",
+      r.terra ? "Sim" : "",
+      csvSafe(resumoEquipamento(r.equipamento)),
+      r.dtDevolucao || "",
+      csvSafe(r.observacoes || ""),
+    ];
+    linhas.push(linha.join(";"));
+  });
+  const blob = new Blob(["\uFEFF" + linhas.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "registo-equipamento-campo.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function csvSafe(v){
+  return '"' + String(v).replace(/"/g,'""') + '"';
+}
+
+// ---------- Tabs ----------
+function switchTab(tab){
+  document.getElementById("secNovo").classList.toggle("active", tab === "novo");
+  document.getElementById("secLista").classList.toggle("active", tab === "lista");
+  document.getElementById("tabNovo").classList.toggle("active", tab === "novo");
+  document.getElementById("tabLista").classList.toggle("active", tab === "lista");
+  if(tab === "lista"){ renderLista(); construirFiltroAno(); }
+}
+
+// ---------- Início ----------
+construirFormulario();
+configurarCanvas(document.getElementById("sigLevantamento"));
+configurarCanvas(document.getElementById("sigDevolucao"));
+iniciarFirebase();
+limparFormulario();
+</script>
+</body>
+</html>
